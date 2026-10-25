@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>موقعي</title>
+<style>
+  :root { --bg:#f3f1ec; --ink:#1d2433; --muted:#6b7280; --accent:#1f6f5c; --card:#fff; --line:#d9d6cc; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#14181f; --ink:#e8e6e1; --muted:#9aa1ad; --accent:#4fb89c; --card:#1c222c; --line:#2e3644; }
+  }
+  * { box-sizing:border-box; }
+  html,body { height:100%; margin:0; }
+  body { background:var(--bg); color:var(--ink); font-family:"Segoe UI",Tahoma,Arial,sans-serif; display:flex; align-items:center; justify-content:center; padding:20px; }
+  .box { background:var(--card); border:1px solid var(--line); border-radius:16px; padding:32px 28px; width:100%; max-width:380px; text-align:center; }
+  h1 { font-size:22px; margin:0 0 8px; }
+  p { color:var(--muted); line-height:1.7; margin:0 0 20px; font-size:15px; }
+  button { font:inherit; font-size:16px; background:var(--accent); color:#fff; border:0; border-radius:10px; padding:12px 22px; cursor:pointer; width:100%; }
+  button:focus-visible { outline:3px solid var(--ink); outline-offset:2px; }
+  .msg { margin-top:16px; font-size:14px; min-height:20px; }
+  .err { color:#c0392b; }
+  textarea { width:100%; direction:ltr; font-family:monospace; font-size:12px; padding:10px; border-radius:8px; border:1px solid var(--line); background:var(--bg); color:var(--ink); resize:none; }
+  #content { max-width:560px; text-align:right; }
+  [hidden] { display:none !important; }
+</style>
+</head>
+<body>
+
+<!-- شاشة القفل -->
+<div class="box" id="lock">
+  <h1 id="lockTitle">الموقع مقفول</h1>
+  <p id="lockText">حط صباعك عشان يفتح.</p>
+  <button id="unlockBtn" hidden>افتح بالبصمة</button>
+  <button id="setupBtn" hidden>سجّل بصمتك لأول مرة</button>
+  <div class="msg" id="msg"></div>
+  <div id="idBox" hidden>
+    <p style="margin-top:16px">انسخ الكود ده والصقه مكان <b>CRED_ID</b> في أول السكريبت، وبعدها الموقع يفتح من أي جهاز:</p>
+    <textarea id="idOut" rows="3" readonly></textarea>
+  </div>
+</div>
+
+<!-- المحتوى بعد الفتح: غيّره زي ما تحب -->
+<div class="box" id="content" hidden>
+  <h1>أهلاً بيك 👋</h1>
+  <p>الصفحة اتفتحت بالبصمة. حط هنا أي حاجة عايزها: كلام، روابط، ملاحظات.</p>
+</div>
+
+<script>
+// بعد التسجيل الأول، الصق الكود هنا (بين الاقتباسين):
+const CRED_ID = "";
+
+const $ = id => document.getElementById(id);
+const toB64 = buf => btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\+/g,"-").replace(/\//g,"_").replace(/=+$/,"");
+const fromB64 = s => Uint8Array.from(atob(s.replace(/-/g,"+").replace(/_/g,"/")), c => c.charCodeAt(0));
+const rand = n => crypto.getRandomValues(new Uint8Array(n));
+
+function show(text, isErr) { $("msg").textContent = text; $("msg").className = "msg" + (isErr ? " err" : ""); }
+function openSite() { $("lock").hidden = true; $("content").hidden = false; }
+
+if (!window.PublicKeyCredential) {
+  show("المتصفح ده مش بيدعم البصمة. جرّب كروم أو سفاري حديث.", true);
+} else if (CRED_ID) {
+  $("unlockBtn").hidden = false;
+} else {
+  $("lockTitle").textContent = "أول مرة؟";
+  $("lockText").textContent = "سجّل بصمتك مرة واحدة وهنديك كود تحطه في الملف.";
+  $("setupBtn").hidden = false;
+}
+
+// تسجيل أول مرة
+$("setupBtn").onclick = async () => {
+  try {
+    const cred = await navigator.credentials.create({ publicKey: {
+      challenge: rand(32),
+      rp: { name: "موقعي", id: location.hostname },
+      user: { id: rand(16), name: "me", displayName: "أنا" },
+      pubKeyCredParams: [{ type:"public-key", alg:-7 }, { type:"public-key", alg:-257 }],
+      authenticatorSelection: { residentKey:"required", userVerification:"required" },
+      timeout: 60000
+    }});
+    $("idOut").value = 'const CRED_ID = "' + toB64(cred.rawId) + '";';
+    $("idBox").hidden = false;
+    show("تم التسجيل ✓");
+  } catch (e) { show("ما تمش التسجيل: " + e.message, true); }
+};
+
+// فتح بالبصمة
+$("unlockBtn").onclick = async () => {
+  try {
+    await navigator.credentials.get({ publicKey: {
+      challenge: rand(32),
+      rpId: location.hostname,
+      allowCredentials: [{ type:"public-key", id: fromB64(CRED_ID) }],
+      userVerification: "required",
+      timeout: 60000
+    }});
+    openSite();
+  } catch (e) { show("البصمة ما اتقبلتش. حاول تاني.", true); }
+};
+</script>
+</body>
+</html>
